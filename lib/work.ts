@@ -1,6 +1,6 @@
 import { adminClient } from "./supabase";
 import { GmailNotConnected, getThread, searchThreadIds, sendEmail, sendReply, threadLink, type MailMessage } from "./google";
-import { jobsFromAlertEmails, jobsFromBoards, readMessage, type FoundJob } from "./ai";
+import { jobsFromAlertEmails, jobsFromWebSearch, readMessage, type FoundJob } from "./ai";
 import type { Message, Profile } from "./types";
 
 // The work behind each button, and the daily run. Every function takes the user's id and
@@ -16,7 +16,7 @@ const ALERT_SENDERS = [
 ];
 const SITE_SENDERS = ["linkedin.com", "joinhandshake.com", "indeed.com"];
 const MAX_AUTO_SENDS = 5;
-export const MAX_SEARCHES_PER_DAY = 3;
+export const MAX_SEARCHES_PER_DAY = 5;
 
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await adminClient().from("profiles").select("*").eq("id", userId).single();
@@ -40,7 +40,7 @@ async function saveJobs(userId: string, jobs: FoundJob[], minScore: number) {
   return data?.length ?? 0;
 }
 
-// Finds new jobs from job-alert emails and free job boards. Returns how many were added.
+// Finds new jobs from job-alert emails and from the web. Returns how many were added.
 export async function runSearch(userId: string, opts: { manual: boolean }) {
   const p = await getProfile(userId);
   const db = adminClient();
@@ -65,7 +65,7 @@ export async function runSearch(userId: string, opts: { manual: boolean }) {
   } catch (e) {
     console.error("alert emails skipped", e);
   }
-  found = found.concat(await jobsFromBoards(p, skip));
+  found = found.concat(await jobsFromWebSearch(p, skip));
   const added = await saveJobs(userId, found, p.min_score);
 
   await db
