@@ -1,46 +1,71 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { Job, Profile } from "./types";
 import type { MailMessage } from "./google";
 import { checkFacts, fitResume, pageCount } from "./doc-export";
+import { findListings } from "./job-sources";
 
-const client = new Anthropic();
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+// Every AI request goes to Google's Gemini API, which has a free tier (daily limits apply).
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
-type Effort = "low" | "medium" | "high";
 type Schema = Record<string, unknown>;
+type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-// Turn on Anthropic's server-side fallback, so a request the main model declines is
-// retried on a suitable model instead of failing.
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
-
-async function call(params: Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "model" | "betas">) {
-  const body = { ...params, model: MODEL, betas: [FALLBACK_BETA], fallbacks: "default" };
-  const msg = await client.beta.messages.create(body as Anthropic.Beta.MessageCreateParamsNonStreaming);
-  if (msg.stop_reason === "refusal") throw new Error("The AI declined this request.");
-  return msg;
+// Gemini accepts a subset of JSON Schema: drop the keywords it doesn't know.
+function geminiSchema(s: unknown): unknown {
+  if (Array.isArray(s)) return s.map(geminiSchema);
+  if (!s || typeof s !== "object") return s;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(s)) if (k !== "additionalProperties") out[k] = geminiSchema(v);
+  return out;
 }
 
-function textOf(msg: Anthropic.Beta.BetaMessage) {
-  return msg.content
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
+export class AiBusy extends Error {
+  constructor() {
+    super("The free AI has reached its limit for now. Please try again in a few minutes, or tomorrow.");
+  }
+}
+
+async function generate(system: string, parts: Part[], schema?: Schema): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("The AI isn't set up yet (GEMINI_API_KEY is missing).");
+  const body = {
+    system_instruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts }],
+    generation_config: schema
+      ? { response_mime_type: "application/json", response_schema: geminiSchema(schema) }
+      : {},
+  };
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${ENDPOINT}/${MODEL}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body),
+    });
+    // Busy or over the per-minute limit: wait and try again a couple of times.
+    if ((res.status === 429 || res.status === 503) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 15_000 * (attempt + 1)));
+      continue;
+    }
+    if (res.status === 429) throw new AiBusy();
+    if (!res.ok) throw new Error(`AI error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const data = (await res.json()) as {
+      candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
+    };
+    const cand = data.candidates?.[0];
+    const text = (cand?.content?.parts ?? []).filter((x) => !x.thought).map((x) => x.text ?? "").join("");
+    if (!text) throw new Error("The AI couldn't answer this request. Try again.");
+    return text;
+  }
 }
 
 // One request whose answer must match `schema`.
-async function askJson<T>(system: string, user: Anthropic.Beta.BetaMessageParam["content"], schema: Schema, effort: Effort = "medium"): Promise<T> {
-  const msg = await call({
-    max_tokens: 16000,
-    system,
-    messages: [{ role: "user", content: user }],
-    output_config: { effort, format: { type: "json_schema", schema } },
-  });
-  return JSON.parse(textOf(msg)) as T;
+async function askJson<T>(system: string, user: string | Part[], schema: Schema): Promise<T> {
+  const text = await generate(system, typeof user === "string" ? [{ text: user }] : user, schema);
+  return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")) as T;
 }
 
-async function askText(system: string, user: string, effort: Effort = "medium") {
-  const msg = await call({ max_tokens: 16000, system, messages: [{ role: "user", content: user }], output_config: { effort } });
-  return textOf(msg).trim();
+async function askText(system: string, user: string) {
+  return (await generate(system, [{ text: user }])).trim();
 }
 
 function candidate(p: Profile) {
@@ -98,45 +123,21 @@ export async function jobsFromAlertEmails(p: Profile, emails: MailMessage[]): Pr
   return r.jobs;
 }
 
-// Searches the web for current openings and checks each posting is still live.
-export async function jobsFromWebSearch(p: Profile, skipUrls: string[]): Promise<FoundJob[]> {
-  const tools = [
-    { type: "web_search_20260209", name: "web_search", max_uses: 12 },
-    { type: "web_fetch_20260209", name: "web_fetch", max_uses: 20 },
-  ] as unknown as Anthropic.Beta.BetaToolUnion[];
-  const system = `You are a job researcher. Find real, currently open job postings for the candidate.
-Search job boards (ZipRecruiter, Built In, company career pages, Greenhouse, Lever, Workday, teamworkonline for sports teams). Indeed detail pages often block fetching; use them only to find employer names.
-Fetch every posting you keep. Drop it if the page says it is closed, expired, filled, removed, or not found, or if it was posted more than about 30 days ago.
-${SCORING_RULES}
-Never make up a URL: only report URLs you fetched.
-Finish with a list of the jobs you kept: title, company, location, salary, url, source, a one-line summary, requirements and duties with the posted date, score, strengths and gaps.`;
-  const messages: Anthropic.Beta.BetaMessageParam[] = [
-    {
-      role: "user",
-      content: `${candidate(p)}\n\nAlready saved (skip these): ${skipUrls.slice(0, 80).join(", ") || "none"}\n\nFind up to 8 strong matches.`,
-    },
-  ];
-  // A long search can pause; send the paused turn back and the server picks up where it stopped.
-  const done: Anthropic.Beta.BetaContentBlock[] = [];
-  let msg = await call({ max_tokens: 32000, system, messages, tools, output_config: { effort: "medium" } });
-  done.push(...msg.content);
-  for (let i = 0; i < 5 && msg.stop_reason === "pause_turn"; i++) {
-    const resume = [...messages, { role: "assistant" as const, content: done as Anthropic.Beta.BetaContentBlockParam[] }];
-    msg = await call({ max_tokens: 32000, system, messages: resume, tools, output_config: { effort: "medium" } });
-    done.push(...msg.content);
-  }
-  const findings = done
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
-  if (!findings.trim()) return [];
+// Gets current listings from free job boards and keeps the ones worth showing, scored.
+export async function jobsFromBoards(p: Profile, skipUrls: string[]): Promise<FoundJob[]> {
+  const listings = (await findListings(p, skipUrls)).slice(0, 40);
+  if (!listings.length) return [];
+  const text = listings
+    .map((l, i) => `--- LISTING ${i + 1}\nTitle: ${l.title}\nCompany: ${l.company}\nLocation: ${l.location}\nSalary: ${l.salary}\nPosted: ${l.posted}\nURL: ${l.url}\nSource: ${l.source}\n${l.description}`)
+    .join("\n\n");
   const r = await askJson<{ jobs: FoundJob[] }>(
-    "Copy the job list from this research report into JSON. Keep only jobs with a real URL. Do not add jobs or change scores.",
-    findings,
+    `You pick and score job listings for a candidate.\n${SCORING_RULES}\nKeep only the 8 best matches. Copy url, title, company, location, salary and source exactly from the listing.`,
+    `${candidate(p)}\n\nLISTINGS:\n${text}`,
     JOB_LIST_SCHEMA,
-    "low",
   );
-  return r.jobs;
+  // Only keep links that really came from a listing.
+  const real = new Set(listings.map((l) => l.url));
+  return r.jobs.filter((j) => real.has(j.url));
 }
 
 // Scores one job the user added themselves.
@@ -186,7 +187,6 @@ export async function readMessage(p: Profile, thread: MailMessage[]): Promise<Re
     `You sort a job seeker's email. kind: "recruiter" if a person reaches out about a role, "interview" if it is about scheduling or an interview, "application_update" for status updates or rejections, "other" for anything else (newsletters, job alerts, marketing).\n${REPLY_RULES}`,
     `CANDIDATE NAME: ${p.full_name || "the candidate"}\n${candidate(p)}\n\nEMAIL THREAD:\n${text}`,
     MESSAGE_SCHEMA,
-    "low",
   );
 }
 
@@ -194,7 +194,6 @@ export async function rewriteReply(p: Profile, summary: string, current: string,
   return askText(
     `You write replies to recruiters for a job seeker.\n${REPLY_RULES}\nReturn only the reply text.`,
     `CANDIDATE NAME: ${p.full_name || "the candidate"}\n${candidate(p)}\n\nTHEIR MESSAGE: ${summary}\n\nCURRENT DRAFT:\n${current}\n\nCHANGES WANTED: ${instructions || "Make it better."}`,
-    "low",
   );
 }
 
@@ -265,18 +264,9 @@ export async function coverLetter(p: Profile, job: Job) {
 
 // Pulls plain text out of an uploaded PDF resume.
 export async function resumeFromPdf(base64: string) {
-  const msg = await call({
-    max_tokens: 16000,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-          { type: "text", text: "Copy this resume as plain text. Keep every section, date and bullet. Return only the resume." },
-        ],
-      },
-    ],
-    output_config: { effort: "low" },
-  });
-  return textOf(msg).trim();
+  const text = await generate("You copy resumes into plain text exactly, without changing any words.", [
+    { inline_data: { mime_type: "application/pdf", data: base64 } },
+    { text: "Copy this resume as plain text. Keep every section, date and bullet. Return only the resume." },
+  ]);
+  return text.trim();
 }

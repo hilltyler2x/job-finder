@@ -11,7 +11,7 @@ A web app where anyone signs up with a Google account and gets:
 
 It never applies to jobs for anyone.
 
-Built with Next.js, Supabase (sign-in and database), the Gmail API and the Claude API.
+Built with Next.js, Supabase (sign-in and database), the Gmail API and Google's Gemini API (free tier).
 See **SETUP.md** to put it online.
 
 ## Code map
@@ -22,7 +22,7 @@ See **SETUP.md** to put it online.
 - `app/api/*`: buttons (search, check messages, send, draft, rewrite, write docs, add job, resume upload)
 - `app/api/cron/daily/route.ts`: the daily run for every user
 - `lib/work.ts`: search, link checks, messages, reminders
-- `lib/ai.ts`: every Claude prompt
+- `lib/ai.ts`: every AI prompt (Gemini)
 - `lib/google.ts`: Gmail reading, sending and drafts
 - `lib/doc-export.ts`: PDF and Word files without extra libraries
 - `supabase/schema.sql`: tables and privacy rules

@@ -1,8 +1,7 @@
 # Putting Job Finder online
 
 This gets the app running at its own web address, where anyone can sign up with their Google account.
-It takes about an hour the first time. Everything below is free to start except the Claude API,
-which you pay for as people use it.
+It takes about an hour the first time, and everything below is free.
 
 You'll create five accounts. Keep a note open: several steps give you a value to paste later.
 The names in CAPITALS are the ones from `.env.example`.
@@ -59,20 +58,29 @@ The app has its own privacy policy at `/privacy` and terms at `/terms`, and a **
 button on the Profile tab. On the consent screen, use `https://YOUR-ADDRESS/privacy` and
 `https://YOUR-ADDRESS/terms`. Set `NEXT_PUBLIC_CONTACT_EMAIL` so the privacy page shows a contact address.
 
-## 4. Anthropic: the AI
+## 4. Google AI Studio: the AI (free)
 
-1. Sign up at console.anthropic.com, add a payment method and a monthly spend limit
-   (Settings > Limits) so costs can't run away.
-2. **API Keys > Create key** → `ANTHROPIC_API_KEY`.
+1. Go to aistudio.google.com, sign in with your Google account and click **Get API key >
+   Create API key** (pick the Job Finder project from step 3).
+2. Copy it → `GEMINI_API_KEY`. Don't add billing: without it the key stays on the free tier and
+   can never be charged.
 
-The app uses Claude Opus 5.5 by default. To spend less, set `CLAUDE_MODEL=claude-sonnet-5-5`.
-If Claude declines a request, the app has Anthropic retry it on a fallback model automatically.
+The app uses `gemini-3.8-flash`. The free tier has per-minute and daily limits (Google shows
+yours at aistudio.google.com/rate-limit). When the limit is reached, people see "The free AI
+has reached its limit for now" and can try again later. On the free tier Google may use the text
+it receives to improve its products; the privacy page says so.
+
+**Job listings (free, recommended).** Gemini's free tier can't search the web, so jobs come from
+two places: users' job-alert emails (when they connect Gmail) and Adzuna's job API. Sign up at
+developer.adzuna.com and copy the App ID and key → `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
+Adzuna's free access is meant for evaluation, so read its terms; listings show "Jobs by Adzuna".
+People can also add any job by pasting its link and description.
 
 ## 5. Vercel: put it online
 
 1. Sign up at vercel.com with your GitHub account, click **Add New > Project**, and import `job-finder`.
 2. Before deploying, open **Environment Variables** and add every value from `.env.example`:
-   the Supabase, Google and Anthropic values above, plus:
+   the Supabase, Google and Gemini values above, plus:
    - `CRON_SECRET`: any long random string (mash the keyboard for 40 characters).
    - `NEXT_PUBLIC_SITE_URL`: leave it for now.
 3. Click **Deploy**. When it finishes, copy your address (like `https://job-finder-xyz.vercel.app`).
@@ -101,10 +109,9 @@ Open your address, click **Sign in with Google**, paste or upload your resume in
 
 ## What it costs
 
-- Supabase, Vercel, GitHub, Google Cloud: free at small scale.
-- Claude API: a web search with Opus 5.5 is roughly 10 to 30 cents; a resume plus cover letter
-  a few cents. Daily searches for one active user come to a few dollars a month. These are
-  estimates; check the Usage page in the Anthropic console after the first week.
+Nothing, at small scale. GitHub, Supabase, Google Cloud, Vercel and the Gemini free tier are all
+free. The limits to watch as more people sign up are Gemini's daily free requests and Vercel's
+5-minute limit for the daily search; both show a clear message rather than charging you.
 
 ## Running it on your own computer (optional)
 

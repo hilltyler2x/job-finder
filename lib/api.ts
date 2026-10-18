@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserId } from "./supabase";
 import { GmailNotConnected } from "./google";
+import { AiBusy } from "./ai";
 
 // Wraps an API route: requires sign-in and turns errors into a JSON { error } reply.
 export function route<C>(handler: (userId: string, req: Request, ctx: C) => Promise<unknown>) {
@@ -11,7 +12,7 @@ export function route<C>(handler: (userId: string, req: Request, ctx: C) => Prom
       return NextResponse.json((await handler(userId, req, ctx)) ?? { ok: true });
     } catch (e) {
       console.error(e);
-      const status = e instanceof GmailNotConnected ? 409 : 500;
+      const status = e instanceof GmailNotConnected ? 409 : e instanceof AiBusy ? 429 : 500;
       return NextResponse.json({ error: e instanceof Error ? e.message : "Something went wrong." }, { status });
     }
   };
