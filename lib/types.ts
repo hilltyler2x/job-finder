@@ -1,0 +1,66 @@
+export type Profile = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  resume: string;
+  roles: string;
+  locations: string;
+  level: string;
+  min_score: number;
+  notes: string;
+  work_setup: string[];
+  relocate_to: string;
+  job_types: string[];
+  min_pay: string;
+  start_date: string;
+  industries: string;
+  avoid: string;
+  auto_reply: boolean;
+  remind_email: boolean;
+  gmail_connected: boolean;
+  search_day: string | null;
+  searches_today: number;
+  last_search_at: string | null;
+};
+
+export type Job = {
+  id: string;
+  user_id: string;
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+  url: string;
+  source: string;
+  summary: string;
+  description: string;
+  score: number;
+  strengths: string[];
+  gaps: string[];
+  status: "new" | "applied" | "dismissed";
+  resume_doc: string;
+  cover_letter: string;
+  found_at: string;
+  checked_at: string | null;
+};
+
+export type Message = {
+  id: string;
+  user_id: string;
+  thread_id: string;
+  last_message_id: string;
+  kind: "recruiter" | "interview" | "application_update";
+  person: string;
+  company: string;
+  site: string;
+  subject: string;
+  from_addr: string;
+  reply_to: string;
+  summary: string;
+  reply: string;
+  status: "needs-reply" | "drafted" | "sent" | "done" | "info";
+  sent_by: string;
+  sent_at: string | null;
+  link: string;
+  received_at: string | null;
+};
