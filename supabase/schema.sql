@@ -113,3 +113,26 @@ revoke update on public.profiles from authenticated;
 grant update (full_name, resume, roles, locations, level, min_score, notes, auto_reply, remind_email,
   work_setup, relocate_to, job_types, min_pay, start_date, industries, avoid)
   on public.profiles to authenticated;
+
+-- Plans and payments (Stripe). Only the server changes these; people can't edit them.
+alter table public.profiles add column if not exists plan text default 'free';
+alter table public.profiles add column if not exists stripe_customer_id text;
+alter table public.profiles add column if not exists stripe_subscription_id text;
+alter table public.profiles add column if not exists docs_month text;
+alter table public.profiles add column if not exists docs_used int default 0;
+alter table public.profiles add column if not exists last_seen_at timestamptz;
+
+-- What each AI request cost, for the owner stats page. Only the server reads or writes it.
+create table if not exists public.usage_events (
+  id bigint generated always as identity primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  kind text not null,
+  model text,
+  input_tokens int default 0,
+  output_tokens int default 0,
+  web_searches int default 0,
+  cost_usd numeric(10,5) default 0,
+  created_at timestamptz default now()
+);
+create index if not exists usage_events_created on public.usage_events (created_at);
+alter table public.usage_events enable row level security;

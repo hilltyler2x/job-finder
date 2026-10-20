@@ -6,6 +6,9 @@ import { checkFacts, makeDocx, makePdf } from "@/lib/doc-export";
 import { ConnectGmail } from "../sign-in";
 
 const sb = browserClient();
+// Set when payments are on; shows the Free and Pro plans.
+const PRO_PRICE = process.env.NEXT_PUBLIC_PRO_PRICE_USD;
+const isFree = (p: Profile) => !!PRO_PRICE && p.plan !== "pro";
 
 async function api<T = { ok: true }>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -55,6 +58,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
+    api("/api/seen").catch(() => {});
+    if (new URLSearchParams(window.location.search).get("upgraded")) {
+      setNotice("Thanks for upgrading! Pro turns on as soon as the payment goes through.");
+      window.history.replaceState(null, "", "/dashboard");
+    }
   }, [load]);
 
   useEffect(() => {
@@ -123,7 +131,7 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
     <>
       <div className="row between">
         <div className="muted small">
-          Searches run every morning. Last search: {last}. Showing jobs scoring {profile.min_score}+, best chance first.
+          {isFree(profile) ? "Searches run every Monday on the Free plan." : "Searches run every morning."} Last search: {last}. Showing jobs scoring {profile.min_score}+, best chance first.
         </div>
         <div className="row">
           <button onClick={() => setAdding(!adding)}>Add a job</button>
@@ -341,9 +349,9 @@ function Messages({ profile, msgs, reload, setNotice }: Shared & { profile: Prof
           Email me each morning when messages are waiting for a reply
         </label>
         <label className="row" style={{ fontWeight: 400 }}>
-          <input type="checkbox" style={{ width: "auto" }} checked={profile.auto_reply}
+          <input type="checkbox" style={{ width: "auto" }} checked={profile.auto_reply} disabled={isFree(profile)}
             onChange={(e) => (e.target.checked ? setConfirmAuto(true) : setSetting("auto_reply", false))} />
-          Let the AI reply for me every time
+          Let the AI reply for me every time{isFree(profile) ? " (Pro plan)" : ""}
         </label>
         {confirmAuto && (
           <div className="notice">
@@ -609,11 +617,50 @@ function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile
       <div className="row" style={{ marginTop: 12 }}>
         <button className="primary" onClick={save} disabled={!!busy}>{busy === "save" ? "Saving..." : "Save"}</button>
       </div>
+      {PRO_PRICE && <Plan profile={profile} setNotice={setNotice} />}
       <div className="row small" style={{ marginTop: 24 }}>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
         <button className="small" disabled={!!busy} onClick={deleteAccount}>Delete my account</button>
       </div>
+    </div>
+  );
+}
+
+function Plan({ profile, setNotice }: { profile: Profile; setNotice: (s: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const pro = profile.plan === "pro";
+  async function go(path: string) {
+    setBusy(true);
+    try {
+      const { url } = await api<{ url: string }>(path);
+      window.location.href = url;
+    } catch (e) {
+      setNotice((e as Error).message);
+      setBusy(false);
+    }
+  }
+  const month = new Date().toISOString().slice(0, 7);
+  const used = profile.docs_month === month ? profile.docs_used : 0;
+  return (
+    <div className="notice" style={{ marginTop: 24 }}>
+      <h3>Your plan: {pro ? "Pro" : "Free"}</h3>
+      {pro ? (
+        <p className="small">Daily searches, up to 5 extra searches a day, unlimited resumes and cover letters, and auto-reply.</p>
+      ) : (
+        <p className="small">
+          Free includes a weekly search, 1 extra search a day, and 3 tailored resumes and cover letters a month
+          ({used} used this month). Pro is ${PRO_PRICE}/month: searches every day, up to 5 extra searches a day,
+          unlimited resumes and cover letters, and auto-reply to recruiters. Cancel anytime.
+        </p>
+      )}
+      {pro ? (
+        profile.stripe_customer_id && <button disabled={busy} onClick={() => go("/api/billing/portal")}>Manage billing</button>
+      ) : (
+        <button className="primary" disabled={busy} onClick={() => go("/api/billing/checkout")}>
+          {busy ? "Opening..." : `Upgrade to Pro, $${PRO_PRICE}/month`}
+        </button>
+      )}
     </div>
   );
 }
