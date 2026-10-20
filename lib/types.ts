@@ -21,6 +21,13 @@ export type Profile = {
   search_day: string | null;
   searches_today: number;
   last_search_at: string | null;
+  plan: "free" | "pro";
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  docs_month: string | null;
+  docs_used: number;
+  last_seen_at: string | null;
+  created_at: string;
 };
 
 export type Job = {

@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Job, Profile } from "./types";
 import type { MailMessage } from "./google";
 import { checkFacts, fitResume, pageCount } from "./doc-export";
+import { recordUsage } from "./usage";
 
 const client = new Anthropic();
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
@@ -16,6 +17,7 @@ const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 async function call(params: Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "model" | "betas">) {
   const body = { ...params, model: MODEL, betas: [FALLBACK_BETA], fallbacks: "default" };
   const msg = await client.beta.messages.create(body as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  await recordUsage(params.tools ? "job_search" : "writing", msg);
   if (msg.stop_reason === "refusal") throw new Error("The AI declined this request.");
   return msg;
 }

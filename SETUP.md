@@ -99,12 +99,41 @@ Cloud also add the domain under **Branding > Authorized domains**.
 Open your address, click **Sign in with Google**, paste or upload your resume in Profile, and click
 **Search again**. Then open Messages and click **Connect Gmail** to try the Gmail features.
 
+## 7. Your business stats page
+
+Add `ADMIN_EMAILS` in Vercel with the email you sign in with, and redeploy. Then open
+`https://YOUR-ADDRESS/admin` to see sign-ups, weekly active users, 4-week retention, Pro users,
+monthly revenue and what the AI costs per active user. These are the numbers a buyer or partner
+will ask for. Nobody else can open the page.
+
+## 8. Optional: charge for Pro with Stripe
+
+Until you do this, everyone gets every feature for free. Once the Stripe values are set, new and
+existing users are on **Free** (a weekly automatic search, 1 extra search a day, 3 tailored resumes
+and cover letters a month, no auto-reply) unless they upgrade to **Pro** (daily search, 5 extra
+searches a day, unlimited documents, auto-reply).
+
+1. Sign up at stripe.com and finish the business details so you can take payments.
+2. **Product catalog > Add product**: name it `Job Finder Pro`, choose **Recurring**, **Monthly**, and
+   a price such as $9. Save, then copy the price ID (starts with `price_`) → `STRIPE_PRICE_ID`.
+   Put the same dollar amount in `NEXT_PUBLIC_PRO_PRICE_USD` (just the number, like `9`).
+3. **Developers > API keys**: copy the Secret key → `STRIPE_SECRET_KEY`.
+4. **Developers > Webhooks > Add endpoint**: URL `https://YOUR-ADDRESS/api/billing/webhook`, events
+   `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted`.
+   Copy its Signing secret → `STRIPE_WEBHOOK_SECRET`.
+5. **Settings > Billing > Customer portal**: click **Activate** so people can cancel or change cards.
+6. Add the four values in Vercel and redeploy. In Supabase, run `supabase/schema.sql` again if you set
+   up the database before this step (it only adds what's missing).
+
+Stripe charges about 2.9% plus 30 cents per payment and nothing monthly.
+
 ## What it costs
 
 - Supabase, Vercel, GitHub, Google Cloud: free at small scale.
 - Claude API: a web search with Opus 5.5 is roughly 10 to 30 cents; a resume plus cover letter
   a few cents. Daily searches for one active user come to a few dollars a month. These are
-  estimates; check the Usage page in the Anthropic console after the first week.
+  estimates; your `/admin` page shows the real cost per active user, and so does the Usage page
+  in the Anthropic console.
 
 ## Running it on your own computer (optional)
 

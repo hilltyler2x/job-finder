@@ -2,6 +2,7 @@ import { adminClient } from "./supabase";
 import { GmailNotConnected, getThread, searchThreadIds, sendEmail, sendReply, threadLink, type MailMessage } from "./google";
 import { jobsFromAlertEmails, jobsFromWebSearch, readMessage, type FoundJob } from "./ai";
 import type { Message, Profile } from "./types";
+import { billingOn, limitsFor } from "./plan";
 
 // The work behind each button, and the daily run. Every function takes the user's id and
 // uses the admin client, so it also works from the daily cron job where no one is signed in.
@@ -16,7 +17,6 @@ const ALERT_SENDERS = [
 ];
 const SITE_SENDERS = ["linkedin.com", "joinhandshake.com", "indeed.com"];
 const MAX_AUTO_SENDS = 5;
-export const MAX_SEARCHES_PER_DAY = 5;
 
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await adminClient().from("profiles").select("*").eq("id", userId).single();
@@ -45,8 +45,10 @@ export async function runSearch(userId: string, opts: { manual: boolean }) {
   const p = await getProfile(userId);
   const db = adminClient();
   const sameDay = p.search_day === today();
-  if (opts.manual && sameDay && p.searches_today >= MAX_SEARCHES_PER_DAY) {
-    throw new Error(`You've reached ${MAX_SEARCHES_PER_DAY} searches today. Try again tomorrow.`);
+  const max = limitsFor(p).searchesPerDay;
+  if (opts.manual && sameDay && p.searches_today >= max) {
+    const more = billingOn() && p.plan !== "pro" ? " Upgrade to Pro for 5 searches a day." : "";
+    throw new Error(`You've reached ${max} search${max > 1 ? "es" : ""} today. Try again tomorrow.${more}`);
   }
 
   const { data: existing } = await db.from("jobs").select("url").eq("user_id", userId);
@@ -158,7 +160,7 @@ export async function checkMessages(userId: string) {
       sent_at: null,
     };
 
-    if (p.auto_reply && replyTo && read.reply && read.kind !== "application_update" && sent < MAX_AUTO_SENDS) {
+    if (p.auto_reply && limitsFor(p).autoReply && replyTo && read.reply && read.kind !== "application_update" && sent < MAX_AUTO_SENDS) {
       await sendReply(userId, last, replyTo, read.reply);
       row.status = "sent";
       row.sent_by = "AI";
