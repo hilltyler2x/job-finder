@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import NativeBridge from "./native-bridge";
 
 export const metadata: Metadata = {
   title: "Job Finder",
@@ -18,7 +19,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <NativeBridge />
+        {children}
+      </body>
     </html>
   );
 }

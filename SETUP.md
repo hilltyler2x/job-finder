@@ -99,6 +99,35 @@ Cloud also add the domain under **Branding > Authorized domains**.
 Open your address, click **Sign in with Google**, paste or upload your resume in Profile, and click
 **Search again**. Then open Messages and click **Connect Gmail** to try the Gmail features.
 
+## 7. iPhone and Android apps
+
+The apps are built by GitHub (no Mac needed) every time `main` changes, or when you click
+**Run workflow** on the **Build phone apps** workflow in the GitHub **Actions** tab. The apps
+open your live site, so do step 5 first.
+
+1. **Supabase:** under **Authentication > URL Configuration > Redirect URLs**, add
+   `com.hilltyler.jobfinder://auth/callback**`.
+2. **GitHub:** in the repository, **Settings > Secrets and variables > Actions > Variables**, add
+   `APP_URL` = your live address, for example `https://your-site.vercel.app` (no slash at the end).
+3. **Android:** after a run, open
+   `https://github.com/hilltyler2x/job-finder/releases/download/test-build/JobFinder-test.apk`
+   on the phone (signed in to GitHub, since the repository is private), then open the file and
+   allow installing from your browser when asked. The link stays the same for every new build.
+4. **iPhone (TestFlight):** you need the Apple Developer Program ($99 a year).
+   - In App Store Connect, **Apps > +  > New App**: platform iOS, name Job Finder, bundle ID
+     `com.hilltyler.jobfinder` (register it first under Certificates, Identifiers & Profiles >
+     Identifiers if it isn't listed).
+   - **Users and Access > Integrations > App Store Connect API > Team Keys**: create a key with
+     the **Admin** role and download the `.p8` file (you can only download it once).
+   - Add four repository **secrets** (Settings > Secrets and variables > Actions > Secrets):
+     `APPLE_TEAM_ID` (Membership details on developer.apple.com), `ASC_KEY_ID` (the key's ID),
+     `ASC_ISSUER_ID` (shown above the key list) and `ASC_KEY_P8` (the whole text of the `.p8`
+     file, including the BEGIN and END lines).
+   - Run the workflow. The build shows up in App Store Connect under **TestFlight** after Apple
+     processes it; add yourself as a tester and install it with the TestFlight app.
+
+Until the Apple secrets are added, the iPhone part is skipped and only the Android app is built.
+
 ## What it costs
 
 - Supabase, Vercel, GitHub, Google Cloud: free at small scale.
