@@ -4,6 +4,7 @@ import { browserClient } from "@/lib/supabase-browser";
 import type { Job, Message, Profile } from "@/lib/types";
 import { checkFacts, makeDocx, makePdf } from "@/lib/doc-export";
 import { ConnectGmail } from "../sign-in";
+import { markRated, reviewMoment, storeReviewUrl } from "@/lib/review";
 
 const sb = browserClient();
 
@@ -110,6 +111,7 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
       const { added } = await api<{ added: number }>("/api/search");
       setNotice(added ? `Found ${added} new match${added > 1 ? "es" : ""}.` : "No new matches above your minimum score this time.");
       await reload();
+      if (added) reviewMoment("matches-found");
     } catch (e) {
       setNotice((e as Error).message);
     }
@@ -193,6 +195,7 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
   const save = (name: string, text: string, ext: "pdf" | "docx", letter: boolean, issues: string[]) => {
     if (issues.length && !confirm(`These details don't match your resume:\n\n${issues.join("\n")}\n\nDownload anyway?`)) return;
     download(name, text, ext, letter);
+    reviewMoment("docs-saved");
   };
   const [busy, setBusy] = useState(false);
   const cls = job.score >= 80 ? "hi" : job.score >= 70 ? "mid" : "";
@@ -200,6 +203,7 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
   async function setStatus(status: Job["status"]) {
     await sb.from("jobs").update({ status }).eq("id", job.id);
     await reload();
+    if (status === "applied") reviewMoment("applied");
   }
   async function writeDocs() {
     setBusy(true);
@@ -451,7 +455,7 @@ function MessageCard({ m, reload, setNotice }: Shared & { m: Message }) {
                   <>
                     <span>Send this reply to {m.reply_to}?</span>
                     <button className="primary" disabled={!!busy}
-                      onClick={() => run("send", () => api(`/api/messages/${m.id}/send`, { text }), "Reply sent.")}>Yes, send</button>
+                      onClick={() => run("send", async () => { await api(`/api/messages/${m.id}/send`, { text }); reviewMoment("reply-sent"); }, "Reply sent.")}>Yes, send</button>
                     <button onClick={() => setConfirm(false)}>Cancel</button>
                   </>
                 ) : (
@@ -495,6 +499,10 @@ function MessageCard({ m, reload, setNotice }: Shared & { m: Message }) {
 function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile }) {
   const [f, setF] = useState(profile);
   const [busy, setBusy] = useState("");
+  const [rateUrl, setRateUrl] = useState("");
+  useEffect(() => {
+    storeReviewUrl().then(setRateUrl);
+  }, []);
 
   const toggle = (key: "work_setup" | "job_types", v: string) => {
     const cur = f[key] ?? [];
@@ -612,6 +620,9 @@ function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile
       <div className="row small" style={{ marginTop: 24 }}>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        {rateUrl && (
+          <button className="small" onClick={() => { markRated(); window.location.href = rateUrl; }}>Rate Job Finder</button>
+        )}
         <button className="small" disabled={!!busy} onClick={deleteAccount}>Delete my account</button>
       </div>
     </div>

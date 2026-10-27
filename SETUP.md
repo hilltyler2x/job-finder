@@ -128,6 +128,15 @@ open your live site, so do step 5 first.
 
 Until the Apple secrets are added, the iPhone part is skipped and only the Android app is built.
 
+**Ratings and reviews.** The apps ask for a store rating right after something good happens
+(saving a resume or cover letter, marking a job applied, sending a reply, or a search that finds
+new matches). They never ask in the first two minutes of opening the app, on the first day, or
+before two good moments, and wait at least 10 days between asks. Apple and Google decide whether
+the rating box actually appears (Apple shows it at most three times a year), and it never shows
+in TestFlight or test installs. The Profile tab also has a **Rate Job Finder** button. It works
+on Android once the app is on Google Play. For iPhone, add `NEXT_PUBLIC_APP_STORE_ID` in Vercel
+(the number in your App Store Connect app's **App Information > Apple ID**) and redeploy.
+
 ## What it costs
 
 - Supabase, Vercel, GitHub, Google Cloud: free at small scale.

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { APP_AUTH_CALLBACK } from "@/lib/native";
+import { noteAppOpen } from "@/lib/review";
 
 // In the iPhone and Android apps, Google sign-in finishes in the system browser and
 // comes back as com.hilltyler.jobfinder://auth/callback?code=... This sends that code to
@@ -13,6 +14,7 @@ export default function NativeBridge() {
     (async () => {
       const { Capacitor } = await import("@capacitor/core");
       if (!Capacitor.isNativePlatform()) return;
+      noteAppOpen();
       const [{ App }, { Browser }] = await Promise.all([
         import("@capacitor/app"),
         import("@capacitor/browser"),
