@@ -4,6 +4,8 @@ import { browserClient } from "@/lib/supabase-browser";
 import type { Job, Message, Profile } from "@/lib/types";
 import { checkFacts, makeDocx, makePdf } from "@/lib/doc-export";
 import { ConnectGmail } from "../sign-in";
+import { markRated, reviewMoment, storeReviewUrl } from "@/lib/review";
+import { afterApplied, afterRejected, countJobs, encouragementOn, refreshNudges, rejectionMessage, setEncouragement, type Counts } from "@/lib/encourage";
 
 const sb = browserClient();
 
@@ -56,6 +58,11 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // In the phone apps, push the "keep going" nudges further out on every visit.
+  useEffect(() => {
+    if (jobs.length) refreshNudges(countJobs(jobs));
+  }, [jobs]);
 
   useEffect(() => {
     if (profile && (!profile.resume || !profile.work_setup?.length)) setTab("profile");
@@ -110,6 +117,7 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
       const { added } = await api<{ added: number }>("/api/search");
       setNotice(added ? `Found ${added} new match${added > 1 ? "es" : ""}.` : "No new matches above your minimum score this time.");
       await reload();
+      if (added) reviewMoment("matches-found");
     } catch (e) {
       setNotice((e as Error).message);
     }
@@ -139,7 +147,7 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
         </div>
       )}
       {shown.map((j) => (
-        <JobCard key={j.id} job={j} resume={profile.resume} reload={reload} setNotice={setNotice} />
+        <JobCard key={j.id} job={j} counts={countJobs(jobs)} resume={profile.resume} reload={reload} setNotice={setNotice} />
       ))}
       <button className="small" onClick={() => setShowDismissed(!showDismissed)}>
         {showDismissed ? "Back to matches" : "Show dismissed jobs"}
@@ -184,7 +192,7 @@ function AddJob({ reload, setNotice, done }: Shared & { done: () => void }) {
   );
 }
 
-function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume: string }) {
+function JobCard({ job, counts, resume, reload, setNotice }: Shared & { job: Job; counts: Counts; resume: string }) {
   const [open, setOpen] = useState(false);
   // Details in the documents that don't match the user's own resume.
   const extra = `${job.title} ${job.company} ${job.location} ${job.description} ${new Date().getFullYear()}`;
@@ -193,6 +201,7 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
   const save = (name: string, text: string, ext: "pdf" | "docx", letter: boolean, issues: string[]) => {
     if (issues.length && !confirm(`These details don't match your resume:\n\n${issues.join("\n")}\n\nDownload anyway?`)) return;
     download(name, text, ext, letter);
+    reviewMoment("docs-saved");
   };
   const [busy, setBusy] = useState(false);
   const cls = job.score >= 80 ? "hi" : job.score >= 70 ? "mid" : "";
@@ -200,6 +209,15 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
   async function setStatus(status: Job["status"]) {
     await sb.from("jobs").update({ status }).eq("id", job.id);
     await reload();
+    if (status === "applied") {
+      reviewMoment("applied");
+      afterApplied({ ...counts, applied: counts.applied + 1 });
+    }
+    if (status === "rejected") {
+      const c = { ...counts, waiting: counts.waiting - (job.status === "new" ? 1 : 0) };
+      setNotice(rejectionMessage(job.company, c));
+      afterRejected(job.company, c);
+    }
   }
   async function writeDocs() {
     setBusy(true);
@@ -228,6 +246,7 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
           <div className="row small">
             <span className="tag">{job.source}</span>
             {job.status === "applied" && <span className="tag">Applied</span>}
+            {job.status === "rejected" && <span className="tag">Not selected</span>}
           </div>
           {open && (
             <>
@@ -275,7 +294,8 @@ function JobCard({ job, resume, reload, setNotice }: Shared & { job: Job; resume
               {busy ? "Writing..." : job.resume_doc ? "Rewrite resume and cover letter" : "Write resume and cover letter"}
             </button>
             <button onClick={() => setOpen(!open)}>{open ? "Less" : "More"}</button>
-            {job.status !== "applied" && <button onClick={() => setStatus("applied")}>I applied</button>}
+            {job.status === "new" && <button onClick={() => setStatus("applied")}>I applied</button>}
+            {job.status === "applied" && <button onClick={() => setStatus("rejected")}>I didn&apos;t get it</button>}
             {job.status !== "dismissed" ? (
               <button onClick={() => setStatus("dismissed")}>Dismiss</button>
             ) : (
@@ -451,7 +471,7 @@ function MessageCard({ m, reload, setNotice }: Shared & { m: Message }) {
                   <>
                     <span>Send this reply to {m.reply_to}?</span>
                     <button className="primary" disabled={!!busy}
-                      onClick={() => run("send", () => api(`/api/messages/${m.id}/send`, { text }), "Reply sent.")}>Yes, send</button>
+                      onClick={() => run("send", async () => { await api(`/api/messages/${m.id}/send`, { text }); reviewMoment("reply-sent"); }, "Reply sent.")}>Yes, send</button>
                     <button onClick={() => setConfirm(false)}>Cancel</button>
                   </>
                 ) : (
@@ -495,6 +515,14 @@ function MessageCard({ m, reload, setNotice }: Shared & { m: Message }) {
 function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile }) {
   const [f, setF] = useState(profile);
   const [busy, setBusy] = useState("");
+  const [rateUrl, setRateUrl] = useState("");
+  const [encourage, setEncourage] = useState(true);
+  const [native, setNative] = useState(false);
+  useEffect(() => {
+    storeReviewUrl().then(setRateUrl);
+    setEncourage(encouragementOn());
+    import("@capacitor/core").then(({ Capacitor }) => setNative(Capacitor.isNativePlatform()));
+  }, []);
 
   const toggle = (key: "work_setup" | "job_types", v: string) => {
     const cur = f[key] ?? [];
@@ -604,6 +632,16 @@ function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile
       <input placeholder="Commission-only, call centers, night shifts" value={f.avoid ?? ""} onChange={(e) => setF({ ...f, avoid: e.target.value })} />
       <label>Only show jobs scoring at least {f.min_score}</label>
       <input type="range" min={40} max={90} step={5} value={f.min_score} onChange={(e) => setF({ ...f, min_score: Number(e.target.value) })} />
+      {native && (
+        <label className="row" style={{ gap: 6 }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={encourage} onChange={async (e) => {
+            setEncourage(e.target.checked);
+            const { data } = await sb.from("jobs").select("*");
+            await setEncouragement(e.target.checked, countJobs((data ?? []) as Job[]));
+          }} />
+          Send me encouraging reminders to keep applying
+        </label>
+      )}
       <label>Anything else</label>
       <textarea style={{ minHeight: 80 }} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
       <div className="row" style={{ marginTop: 12 }}>
@@ -612,6 +650,9 @@ function ProfileForm({ profile, reload, setNotice }: Shared & { profile: Profile
       <div className="row small" style={{ marginTop: 24 }}>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        {rateUrl && (
+          <button className="small" onClick={() => { markRated(); window.location.href = rateUrl; }}>Rate Job Finder</button>
+        )}
         <button className="small" disabled={!!busy} onClick={deleteAccount}>Delete my account</button>
       </div>
     </div>

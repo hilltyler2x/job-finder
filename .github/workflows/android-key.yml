@@ -1,0 +1,49 @@
+name: Create Android upload key
+
+# Run this once, by hand, before the first Google Play build. It makes the key that
+# signs the app bundles you upload to Google Play and leaves it as a private download
+# on the run page for one day. Copy its four values into repository secrets, then
+# delete the download. No Java or Android tools are needed on your computer.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  key:
+    name: Make the upload key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Make the key
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/key"
+          cd "$RUNNER_TEMP/key"
+          password="$(openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 32)"
+          keytool -genkeypair -keystore upload.jks -storetype PKCS12 -alias upload \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -storepass "$password" -keypass "$password" \
+            -dname "CN=Job Finder, O=FYEKICKS LLC, C=US" >/dev/null
+          base64 -w0 upload.jks > ANDROID_KEYSTORE_BASE64.txt
+          printf '%s' "$password" > ANDROID_KEYSTORE_PASSWORD.txt
+          printf '%s' "$password" > ANDROID_KEY_PASSWORD.txt
+          printf 'upload' > ANDROID_KEY_ALIAS.txt
+          cat > README.txt <<'TXT'
+          Add each .txt file's contents as a repository secret with the same name
+          (Settings > Secrets and variables > Actions > Secrets > New repository secret):
+            ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+          Keep upload.jks and the password somewhere safe and private (for example a password
+          manager). Don't email them or paste them into a chat. Then delete this download from
+          the run page.
+          TXT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-upload-key
+          path: ${{ runner.temp }}/key
+          retention-days: 1
