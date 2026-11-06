@@ -42,7 +42,7 @@ create table if not exists public.jobs (
   score int default 0,
   strengths jsonb default '[]',
   gaps jsonb default '[]',
-  status text default 'new' check (status in ('new','applied','dismissed')),
+  status text default 'new' check (status in ('new','applied','rejected','dismissed')),
   resume_doc text default '',
   cover_letter text default '',
   found_at timestamptz default now(),

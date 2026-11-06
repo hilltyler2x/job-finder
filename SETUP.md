@@ -128,6 +128,16 @@ open your live site, so do step 5 first.
 
 Until the Apple secrets are added, the iPhone part is skipped and only the Android app is built.
 
+**Encouraging reminders.** On a job you applied to, **I didn't get it** marks it "Not selected"
+and shows a short encouraging note. In the apps, the next morning at 10 a notification follows
+with how many new matches are waiting. If someone stops opening the app, up to three gentle
+"keep going" reminders go out (after 2, 5 and 9 days, at 6 PM); opening the app pushes them back.
+The app asks for notification permission only after the first "I applied" or "I didn't get it",
+never at launch. People can turn them off on the Profile tab. These are scheduled on the phone,
+so there's no push server or extra key to set up. If you already ran `supabase/schema.sql`
+before this change, run this once in the Supabase SQL editor:
+`alter table jobs drop constraint jobs_status_check, add constraint jobs_status_check check (status in ('new','applied','rejected','dismissed'));`
+
 **Ratings and reviews.** The apps ask for a store rating right after something good happens
 (saving a resume or cover letter, marking a job applied, sending a reply, or a search that finds
 new matches). They never ask in the first two minutes of opening the app, on the first day, or
