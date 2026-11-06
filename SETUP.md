@@ -128,6 +128,28 @@ open your live site, so do step 5 first.
 
 Until the Apple secrets are added, the iPhone part is skipped and only the Android app is built.
 
+5. **Google Play** (one-time $25 developer account; organization accounts can publish to
+   production without the 20-tester closed test that personal accounts need):
+   - **Upload key:** in GitHub **Actions**, run **Create Android upload key**. Download the
+     `android-upload-key` file from the run page and add its four values as repository secrets
+     (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+     `ANDROID_KEY_PASSWORD`). Save `upload.jks` and the password in a password manager, then
+     delete the download. If the key is ever lost, Google Play can reset it, because Play
+     keeps the real signing key (Play App Signing).
+   - **App bundle:** the next **Build phone apps** run publishes a signed
+     `JobFinder-play.aab` at
+     `https://github.com/hilltyler2x/job-finder/releases/download/play-build/JobFinder-play.aab`.
+     Its version code goes up by one every run, which Google Play requires.
+   - **Play Console:** **Create app** (name Job Finder, App, Free), then go through every item
+     on the **Dashboard**. You will need a privacy policy link (`<your site>/privacy`), the
+     512 x 512 icon (`assets/icon-only.png` resized), a 1024 x 500 feature graphic, at least two
+     phone screenshots, the content rating questionnaire, target audience (18+), ads (none), and
+     the Data safety form (the app collects name, email, resume text and job-search messages,
+     sent over HTTPS, and users can delete their account in the app).
+   - **Release:** **Testing > Internal testing > Create new release**, upload the `.aab`, add
+     yourself as a tester and install it from the Play Store link. When it works, promote the
+     same release to **Production** and submit it for review.
+
 **Encouraging reminders.** On a job you applied to, **I didn't get it** marks it "Not selected"
 and shows a short encouraging note. In the apps, the next morning at 10 a notification follows
 with how many new matches are waiting. If someone stops opening the app, up to three gentle
