@@ -129,7 +129,7 @@ open your live site, so do step 5 first.
 Until the Apple secrets are added, the iPhone part is skipped and only the Android app is built.
 
 5. **Google Play** (one-time $25 developer account; organization accounts can publish to
-   production without the 20-tester closed test that personal accounts need):
+   production without the 12-tester, 14-day closed test that personal accounts need):
    - **Upload key:** in GitHub **Actions**, run **Create Android upload key**. Download the
      `android-upload-key` file from the run page and add its four values as repository secrets
      (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
