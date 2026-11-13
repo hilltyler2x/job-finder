@@ -106,7 +106,10 @@ export async function jobsFromWebSearch(p: Profile, skipUrls: string[]): Promise
   ] as unknown as Anthropic.Beta.BetaToolUnion[];
   const system = `You are a job researcher. Find real, currently open job postings for the candidate.
 Search job boards (ZipRecruiter, Built In, company career pages, Greenhouse, Lever, Workday, teamworkonline for sports teams). Indeed detail pages often block fetching; use them only to find employer names.
-Fetch every posting you keep. Drop it if the page says it is closed, expired, filled, removed, or not found, or if it was posted more than about 30 days ago.
+Fetch every posting you keep and read it for two things before keeping it:
+1. Any text saying the job is closed, expired, filled, removed, no longer accepting applications, or not found. If there is any, or the link redirects to a search or home page, drop the job.
+2. The posted or updated date. Drop the job if it was posted more than 21 days ago. If no date is shown, keep it only if the page has a working Apply button for this exact job.
+Job boards often show copies of old postings: when the same job appears on the company's own careers page, use that link instead, and drop the job if the company's page no longer lists it.
 ${SCORING_RULES}
 Never make up a URL: only report URLs you fetched.
 Finish with a list of the jobs you kept: title, company, location, salary, url, source, a one-line summary, requirements and duties with the posted date, score, strengths and gaps.`;

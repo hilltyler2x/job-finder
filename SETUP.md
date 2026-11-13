@@ -158,7 +158,7 @@ The app asks for notification permission only after the first "I applied" or "I 
 never at launch. People can turn them off on the Profile tab. These are scheduled on the phone,
 so there's no push server or extra key to set up. If you already ran `supabase/schema.sql`
 before this change, run this once in the Supabase SQL editor:
-`alter table jobs drop constraint jobs_status_check, add constraint jobs_status_check check (status in ('new','applied','rejected','dismissed'));`
+`alter table jobs drop constraint jobs_status_check, add constraint jobs_status_check check (status in ('new','applied','rejected','dismissed','expired'));`
 
 **Ratings and reviews.** The apps ask for a store rating right after something good happens
 (saving a resume or cover letter, marking a job applied, sending a reply, or a search that finds

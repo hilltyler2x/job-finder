@@ -29,7 +29,11 @@ function today() {
 }
 
 async function saveJobs(userId: string, jobs: FoundJob[], minScore: number) {
-  const keep = jobs.filter((j) => j.url && j.score >= minScore);
+  const keep: FoundJob[] = [];
+  // Double-check the AI's work: never save a posting the site says is closed.
+  const candidates = jobs.filter((j) => j.url && j.score >= minScore);
+  const states = await Promise.all(candidates.map((j) => linkStatus(j.url)));
+  candidates.forEach((j, i) => states[i] !== "dead" && keep.push(j));
   if (!keep.length) return 0;
   const rows = keep.map((j) => ({ ...j, user_id: userId, status: "new", checked_at: new Date().toISOString() }));
   const { data, error } = await adminClient()
@@ -79,28 +83,79 @@ export async function runSearch(userId: string, opts: { manual: boolean }) {
   return added;
 }
 
-const DEAD = /no longer (accepting|available)|job (has )?expired|posting (has )?(closed|expired)|position (has been )?filled|this job (was|has been) removed|job not found|page not found|closed to new applications/i;
+// Words job sites use when a posting is gone.
+const DEAD = new RegExp(
+  [
+    "no longer (accepting|available|open|active|posted)",
+    "(job|posting|position|listing|requisition|vacancy) (has |is |was )?(been )?(expired|closed|filled|removed|deleted|archived|unavailable)",
+    "(this|the) job (is|was|has been) (no longer|removed|closed|filled|taken down)",
+    "job (you('re| are) looking for|you requested) (is|was|could not|can't)",
+    "(job|page|posting) not found",
+    "not accepting (new )?applications",
+    "closed to new applications",
+    "applications? (are |is )?(now )?closed",
+    "position (has been )?filled",
+    "expired job",
+    "this posting has ended",
+  ].join("|"),
+  "i",
+);
 
-// Removes saved jobs whose postings are gone. Pages that block checking are kept.
+// Checks whether a posting is still live. Returns "dead" when the site says it's gone,
+// "live" when the page loads and says nothing like that, and "unknown" when the page
+// can't be read (blocked, timed out). Scripts are skipped and only the first part of the
+// page is read: closed banners sit near the top, while "similar jobs" lists further down
+// can mention other, expired jobs.
+export async function linkStatus(url: string): Promise<"live" | "dead" | "unknown"> {
+  if (!/^https?:\/\//.test(url)) return "unknown";
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(15_000),
+      headers: { "User-Agent": "Mozilla/5.0 JobFinder link check" },
+    });
+    if (res.status === 404 || res.status === 410) return "dead";
+    if (!res.ok) return "unknown";
+    // A job page that redirects to a plain search or home page means the job is gone.
+    const landed = new URL(res.url);
+    if (new URL(url).pathname.length > 1 && landed.pathname.replace(/\/$/, "") === "") return "dead";
+    const text = (await res.text())
+      .slice(0, 300_000)
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .slice(0, 60_000);
+    return DEAD.test(text) ? "dead" : "live";
+  } catch {
+    return "unknown";
+  }
+}
+
+// Marks saved jobs expired when their postings are gone. Expired jobs stay in the list
+// (hidden), so the next search skips them instead of adding them back. Pages that can't
+// be read (many job sites block checks) are tried again tomorrow, and hidden once the
+// job was found more than 30 days ago, since postings that old are usually filled.
 export async function recheckLinks(userId: string) {
   const db = adminClient();
-  const { data } = await db.from("jobs").select("id,url").eq("user_id", userId).eq("status", "new");
-  let removed = 0;
-  for (const job of data ?? []) {
-    try {
-      const res = await fetch(job.url, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 JobFinder link check" } });
-      const gone = res.status === 404 || res.status === 410 || (res.ok && DEAD.test((await res.text()).slice(0, 400_000)));
-      if (gone) {
-        await db.from("jobs").delete().eq("id", job.id);
-        removed++;
-      } else {
-        await db.from("jobs").update({ checked_at: new Date().toISOString() }).eq("id", job.id);
-      }
-    } catch {
-      // Network error or blocked page: keep the job and try again tomorrow.
-    }
+  const { data } = await db.from("jobs").select("id,url,found_at").eq("user_id", userId).eq("status", "new");
+  const jobs = (data ?? []).filter((j) => !String(j.url).startsWith("manual:"));
+  let expired = 0;
+  const now = Date.now();
+  // Five at a time, so a long list doesn't take minutes.
+  for (let i = 0; i < jobs.length; i += 5) {
+    await Promise.all(
+      jobs.slice(i, i + 5).map(async (job) => {
+        const state = await linkStatus(job.url);
+        const stale = state === "unknown" && now - new Date(job.found_at).getTime() > 30 * 24 * 3600_000;
+        if (state === "dead" || stale) {
+          await db.from("jobs").update({ status: "expired" }).eq("id", job.id);
+          expired++;
+        } else if (state === "live") {
+          await db.from("jobs").update({ checked_at: new Date().toISOString() }).eq("id", job.id);
+        }
+      }),
+    );
   }
-  return removed;
+  return expired;
 }
 
 function siteOf(addr: string) {
