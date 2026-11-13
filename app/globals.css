@@ -41,6 +41,9 @@ a { color: var(--accent); }
 h1 { font-size: 26px; margin: 0 0 4px; }
 h2 { font-size: 18px; margin: 0; }
 h3 { font-size: 16px; margin: 0; }
+h2.h3 { font-size: 16px; }
+.faq h3 { margin-top: 14px; }
+.faq p { margin: 4px 0 0; }
 button, .btn {
   font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
   border-radius: 8px; padding: 7px 12px; cursor: pointer; text-decoration: none; display: inline-block;

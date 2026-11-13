@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy | Job Finder" };
+export const metadata = { title: "Privacy Policy", alternates: { canonical: "/privacy" } };
 
 export default function Privacy() {
   const contact = process.env.NEXT_PUBLIC_CONTACT_EMAIL;

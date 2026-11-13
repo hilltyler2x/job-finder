@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Use | Job Finder" };
+export const metadata = { title: "Terms of Use", alternates: { canonical: "/terms" } };
 
 export default function Terms() {
   return (
