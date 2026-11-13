@@ -1,5 +1,5 @@
 // One place for the public name, address and description, so a rename is a one-line change.
-export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "Job Finder";
+export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "LikelyHire";
 
 // Public address used in the sitemap, share previews and structured data.
 // Set NEXT_PUBLIC_SITE_URL once the app has its own domain; Vercel's production address is the fallback.

@@ -105,8 +105,8 @@ The app already publishes `/robots.txt` (lets search engines and AI assistants r
 pages, keeps the dashboard private), `/sitemap.xml`, `/llms.txt` and structured data on the home page.
 After it's live:
 
-1. In Vercel, set `NEXT_PUBLIC_SITE_URL` to your real address (your own domain once you have one)
-   and `NEXT_PUBLIC_SITE_NAME` to the app's name, then redeploy.
+1. Name the Vercel project `likelyhire` so the free address is https://likelyhire.vercel.app.
+   The app uses that address automatically. Set `NEXT_PUBLIC_SITE_URL` only if you later add your own domain.
 2. In Vercel **Settings > Deployment Protection**, make sure the production address is public.
 3. Sign up at search.google.com/search-console, add your address, verify it, and submit
    `https://YOUR-ADDRESS/sitemap.xml`.
