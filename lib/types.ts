@@ -37,7 +37,7 @@ export type Job = {
   score: number;
   strengths: string[];
   gaps: string[];
-  status: "new" | "applied" | "rejected" | "dismissed";
+  status: "new" | "applied" | "rejected" | "dismissed" | "expired";
   resume_doc: string;
   cover_letter: string;
   found_at: string;

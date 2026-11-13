@@ -87,7 +87,7 @@ export default function Dashboard() {
       {notice && <div className="notice">{notice}</div>}
       <div className="tabs">
         <button className={tab === "matches" ? "on" : ""} onClick={() => setTab("matches")}>
-          Matches ({jobs.filter((j) => j.status !== "dismissed").length})
+          Matches ({jobs.filter((j) => !hidden(j)).length})
         </button>
         <button className={tab === "messages" ? "on" : ""} onClick={() => setTab("messages")}>
           Messages{waiting ? ` (${waiting} waiting)` : ""}
@@ -103,19 +103,23 @@ export default function Dashboard() {
   );
 }
 
+// Dismissed and expired jobs are kept (so searches never add them back) but hidden.
+const hidden = (j: Job) => j.status === "dismissed" || j.status === "expired";
+
 type Shared = { reload: () => Promise<void>; setNotice: (s: string) => void };
 
 function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profile; jobs: Job[] }) {
   const [busy, setBusy] = useState(false);
-  const [showDismissed, setShowDismissed] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [adding, setAdding] = useState(false);
 
   async function search() {
     setBusy(true);
     setNotice("Searching job sites and your job-alert emails. This can take a few minutes.");
     try {
-      const { added } = await api<{ added: number }>("/api/search");
-      setNotice(added ? `Found ${added} new match${added > 1 ? "es" : ""}.` : "No new matches above your minimum score this time.");
+      const { added, expired } = await api<{ added: number; expired: number }>("/api/search");
+      const gone = expired ? ` Hid ${expired} saved job${expired > 1 ? "s" : ""} that closed.` : "";
+      setNotice((added ? `Found ${added} new match${added > 1 ? "es" : ""}.` : "No new matches above your minimum score this time.") + gone);
       await reload();
       if (added) reviewMoment("matches-found");
     } catch (e) {
@@ -124,14 +128,14 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
     setBusy(false);
   }
 
-  const shown = jobs.filter((j) => (showDismissed ? j.status === "dismissed" : j.status !== "dismissed"));
+  const shown = jobs.filter((j) => hidden(j) === showHidden);
   const last = profile.last_search_at ? new Date(profile.last_search_at).toLocaleString() : "never";
 
   return (
     <>
       <div className="row between">
         <div className="muted small">
-          Searches run every morning. Last search: {last}. Showing jobs scoring {profile.min_score}+, best chance first.
+          Searches run every morning, and saved jobs are re-checked so closed ones are hidden. Last search: {last}. Showing jobs scoring {profile.min_score}+, best chance first.
         </div>
         <div className="row">
           <button onClick={() => setAdding(!adding)}>Add a job</button>
@@ -149,8 +153,8 @@ function Matches({ profile, jobs, reload, setNotice }: Shared & { profile: Profi
       {shown.map((j) => (
         <JobCard key={j.id} job={j} counts={countJobs(jobs)} resume={profile.resume} reload={reload} setNotice={setNotice} />
       ))}
-      <button className="small" onClick={() => setShowDismissed(!showDismissed)}>
-        {showDismissed ? "Back to matches" : "Show dismissed jobs"}
+      <button className="small" onClick={() => setShowHidden(!showHidden)}>
+        {showHidden ? "Back to matches" : "Show dismissed and expired jobs"}
       </button>
     </>
   );
@@ -213,6 +217,7 @@ function JobCard({ job, counts, resume, reload, setNotice }: Shared & { job: Job
       reviewMoment("applied");
       afterApplied({ ...counts, applied: counts.applied + 1 });
     }
+    if (status === "expired") setNotice(`Marked ${job.company || "this job"} as expired. It's hidden and won't come back in your searches.`);
     if (status === "rejected") {
       const c = { ...counts, waiting: counts.waiting - (job.status === "new" ? 1 : 0) };
       setNotice(rejectionMessage(job.company, c));
@@ -247,6 +252,7 @@ function JobCard({ job, counts, resume, reload, setNotice }: Shared & { job: Job
             <span className="tag">{job.source}</span>
             {job.status === "applied" && <span className="tag">Applied</span>}
             {job.status === "rejected" && <span className="tag">Not selected</span>}
+            {job.status === "expired" && <span className="tag">Expired</span>}
           </div>
           {open && (
             <>
@@ -296,7 +302,8 @@ function JobCard({ job, counts, resume, reload, setNotice }: Shared & { job: Job
             <button onClick={() => setOpen(!open)}>{open ? "Less" : "More"}</button>
             {job.status === "new" && <button onClick={() => setStatus("applied")}>I applied</button>}
             {job.status === "applied" && <button onClick={() => setStatus("rejected")}>I didn&apos;t get it</button>}
-            {job.status !== "dismissed" ? (
+            {job.status === "new" && <button onClick={() => setStatus("expired")} title="The posting is closed or gone">Job expired</button>}
+            {!hidden(job) ? (
               <button onClick={() => setStatus("dismissed")}>Dismiss</button>
             ) : (
               <button onClick={() => setStatus("new")}>Restore</button>
