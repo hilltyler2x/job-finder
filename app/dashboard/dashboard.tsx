@@ -4,6 +4,7 @@ import { browserClient } from "@/lib/supabase-browser";
 import type { Job, Message, Profile } from "@/lib/types";
 import { checkFacts, makeDocx, makePdf } from "@/lib/doc-export";
 import { ConnectGmail } from "../sign-in";
+import { SITE_NAME } from "@/lib/site";
 
 const sb = browserClient();
 
@@ -72,7 +73,7 @@ export default function Dashboard() {
     <main className="wrap">
       <div className="row between">
         <div>
-          <h1>Job Finder</h1>
+          <h1>{SITE_NAME}</h1>
           <div className="muted small">{profile?.email}</div>
         </div>
         <button onClick={signOut}>Sign out</button>
@@ -322,7 +323,7 @@ function Messages({ profile, msgs, reload, setNotice }: Shared & { profile: Prof
         <div className="card">
           <h3>Connect Gmail (optional)</h3>
           <p className="muted small">
-            Connect Gmail and Job Finder finds recruiter messages and LinkedIn, Indeed and Handshake
+            Connect Gmail and {SITE_NAME} finds recruiter messages and LinkedIn, Indeed and Handshake
             notifications for you, writes replies, and can send them from your email. Without it, paste
             any message below and you still get a reply written for you.
           </p>

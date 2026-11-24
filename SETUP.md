@@ -99,6 +99,20 @@ Cloud also add the domain under **Branding > Authorized domains**.
 Open your address, click **Sign in with Google**, paste or upload your resume in Profile, and click
 **Search again**. Then open Messages and click **Connect Gmail** to try the Gmail features.
 
+## Getting found by Google, Bing and ChatGPT
+
+The app already publishes `/robots.txt` (lets search engines and AI assistants read the public
+pages, keeps the dashboard private), `/sitemap.xml`, `/llms.txt` and structured data on the home page.
+After it's live:
+
+1. Name the Vercel project `likelyhire` so the free address is https://likelyhire.vercel.app.
+   The app uses that address automatically. Set `NEXT_PUBLIC_SITE_URL` only if you later add your own domain.
+2. In Vercel **Settings > Deployment Protection**, make sure the production address is public.
+3. Sign up at search.google.com/search-console, add your address, verify it, and submit
+   `https://YOUR-ADDRESS/sitemap.xml`.
+4. Do the same at bing.com/webmasters (it can import from Google Search Console). ChatGPT search
+   relies heavily on Bing.
+
 ## What it costs
 
 - Supabase, Vercel, GitHub, Google Cloud: free at small scale.

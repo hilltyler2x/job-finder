@@ -2,6 +2,7 @@ import { adminClient } from "./supabase";
 import { GmailNotConnected, getThread, searchThreadIds, sendEmail, sendReply, threadLink, type MailMessage } from "./google";
 import { jobsFromAlertEmails, jobsFromWebSearch, readMessage, type FoundJob } from "./ai";
 import type { Message, Profile } from "./types";
+import { SITE_NAME } from "@/lib/site";
 
 // The work behind each button, and the daily run. Every function takes the user's id and
 // uses the admin client, so it also works from the daily cron job where no one is signed in.
@@ -233,11 +234,11 @@ export async function sendReminder(userId: string) {
 
   const site = process.env.NEXT_PUBLIC_SITE_URL || "";
   const lines = waiting.map((m) => `- ${m.person || "Someone"}, ${m.company || "unknown company"} (${m.site}): ${m.summary}`);
-  let body = `Hi${p.full_name ? " " + p.full_name.split(" ")[0] : ""},\n\n${waiting.length} message${waiting.length > 1 ? "s are" : " is"} waiting for your reply:\n\n${lines.join("\n")}\n\nA reply is already written for each one. Open Job Finder to send it, edit it, or write your own:\n${site}/dashboard\n`;
+  let body = `Hi${p.full_name ? " " + p.full_name.split(" ")[0] : ""},\n\n${waiting.length} message${waiting.length > 1 ? "s are" : " is"} waiting for your reply:\n\n${lines.join("\n")}\n\nA reply is already written for each one. Open ${SITE_NAME} to send it, edit it, or write your own:\n${site}/dashboard\n`;
   if (aiSent?.length) {
     body += `\nThe AI replied for you to: ${aiSent.map((m) => `${m.person} (${m.company})`).join(", ")}.\n`;
   }
-  body += "\nYou can turn these reminders off in Job Finder under Messages.";
-  await sendEmail(userId, p.email, `Job Finder: ${waiting.length} message${waiting.length > 1 ? "s" : ""} waiting for a reply`, body);
+  body += `\nYou can turn these reminders off in ${SITE_NAME} under Messages.`;
+  await sendEmail(userId, p.email, `${SITE_NAME}: ${waiting.length} message${waiting.length > 1 ? "s" : ""} waiting for a reply`, body);
   return true;
 }
