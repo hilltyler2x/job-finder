@@ -178,17 +178,22 @@ function AddJob({ reload, setNotice, done }: Shared & { done: () => void }) {
   return (
     <div className="card">
       <h3>Add a job you found</h3>
-      <label>Job title</label>
-      <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
-      <label>Company</label>
-      <input value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
+      <p className="muted">Paste the link. The AI reads the posting and scores it. Everything else is optional.</p>
       <label>Link</label>
-      <input value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} />
-      <label>Job description (paste it)</label>
-      <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+      <input value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} placeholder="https://..." />
+      <label>Job title (optional)</label>
+      <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+      <label>Company (optional)</label>
+      <input value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
+      <label>Job description (optional)</label>
+      <textarea
+        value={f.description}
+        onChange={(e) => setF({ ...f, description: e.target.value })}
+        placeholder="Leave blank and the AI reads the link for you"
+      />
       <div className="row" style={{ marginTop: 12 }}>
         <button className="primary" onClick={save} disabled={busy}>
-          {busy ? "Scoring..." : "Add and score"}
+          {busy ? "Reading and scoring..." : "Add and score"}
         </button>
         <button onClick={done}>Cancel</button>
       </div>
