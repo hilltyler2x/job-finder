@@ -3,8 +3,26 @@ import type { Job, Profile } from "./types";
 import type { MailMessage } from "./google";
 import { checkFacts, fitResume, pageCount } from "./doc-export";
 
-const client = new Anthropic();
+// The SDK already retries rate limits and overloads with backoff; give it a few more tries.
+const client = new Anthropic({ maxRetries: 4 });
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+// A cheaper model to try when the main one is rate limited or overloaded.
+const BUSY_MODEL = process.env.CLAUDE_BUSY_MODEL || "claude-sonnet-5-5";
+
+// Shown to users instead of a raw API error when the AI can't answer right now.
+export class AiBusy extends Error {
+  constructor() {
+    super("The AI is busy right now. Nothing was lost, so try again in a few minutes.");
+  }
+}
+
+// Rate limits, overloads and an empty credit balance are the "try later" kind of failure.
+function isBusy(e: unknown) {
+  if (e instanceof Anthropic.APIConnectionError) return true;
+  if (!(e instanceof Anthropic.APIError)) return false;
+  if (e.status === 429 || e.status === 529 || (e.status ?? 0) >= 500) return true;
+  return e.status === 400 && /credit balance/i.test(e.message);
+}
 
 type Effort = "low" | "medium" | "high";
 type Schema = Record<string, unknown>;
@@ -14,10 +32,49 @@ type Schema = Record<string, unknown>;
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 async function call(params: Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "model" | "betas">) {
-  const body = { ...params, model: MODEL, betas: [FALLBACK_BETA], fallbacks: "default" };
-  const msg = await client.beta.messages.create(body as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  const send = (model: string) =>
+    client.beta.messages.create({ ...params, model, betas: [FALLBACK_BETA], fallbacks: "default" } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  let msg: Anthropic.Beta.BetaMessage;
+  try {
+    msg = await send(MODEL);
+  } catch (e) {
+    if (!isBusy(e)) throw e;
+    console.error("Main model unavailable, trying the backup model:", e);
+    try {
+      msg = await send(BUSY_MODEL);
+    } catch (e2) {
+      if (isBusy(e2)) {
+        console.error("Backup model unavailable too:", e2);
+        throw new AiBusy();
+      }
+      throw e2;
+    }
+  }
   if (msg.stop_reason === "refusal") throw new Error("The AI declined this request.");
   return msg;
+}
+
+const WEB_TOOLS = [
+  { type: "web_search_20260209", name: "web_search", max_uses: 12 },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 20 },
+] as unknown as Anthropic.Beta.BetaToolUnion[];
+
+// Runs a request that uses the web tools and returns all the text it wrote. A long search can
+// pause; the paused turn is sent back and the server picks up where it stopped.
+async function research(system: string, user: string) {
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: user }];
+  const done: Anthropic.Beta.BetaContentBlock[] = [];
+  let msg = await call({ max_tokens: 32000, system, messages, tools: WEB_TOOLS, output_config: { effort: "medium" } });
+  done.push(...msg.content);
+  for (let i = 0; i < 5 && msg.stop_reason === "pause_turn"; i++) {
+    const resume = [...messages, { role: "assistant" as const, content: done as Anthropic.Beta.BetaContentBlockParam[] }];
+    msg = await call({ max_tokens: 32000, system, messages: resume, tools: WEB_TOOLS, output_config: { effort: "medium" } });
+    done.push(...msg.content);
+  }
+  return done
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
 }
 
 function textOf(msg: Anthropic.Beta.BetaMessage) {
@@ -100,35 +157,19 @@ export async function jobsFromAlertEmails(p: Profile, emails: MailMessage[]): Pr
 
 // Searches the web for current openings and checks each posting is still live.
 export async function jobsFromWebSearch(p: Profile, skipUrls: string[]): Promise<FoundJob[]> {
-  const tools = [
-    { type: "web_search_20260209", name: "web_search", max_uses: 12 },
-    { type: "web_fetch_20260209", name: "web_fetch", max_uses: 20 },
-  ] as unknown as Anthropic.Beta.BetaToolUnion[];
   const system = `You are a job researcher. Find real, currently open job postings for the candidate.
 Search job boards (ZipRecruiter, Built In, company career pages, Greenhouse, Lever, Workday, teamworkonline for sports teams). Indeed detail pages often block fetching; use them only to find employer names.
-Fetch every posting you keep. Drop it if the page says it is closed, expired, filled, removed, or not found, or if it was posted more than about 30 days ago.
+Fetch every posting you keep and read it for two things before keeping it:
+1. Any text saying the job is closed, expired, filled, removed, no longer accepting applications, or not found. If there is any, or the link redirects to a search or home page, drop the job.
+2. The posted or updated date. Drop the job if it was posted more than 21 days ago. If no date is shown, keep it only if the page has a working Apply button for this exact job.
+Job boards often show copies of old postings: when the same job appears on the company's own careers page, use that link instead, and drop the job if the company's page no longer lists it.
 ${SCORING_RULES}
 Never make up a URL: only report URLs you fetched.
 Finish with a list of the jobs you kept: title, company, location, salary, url, source, a one-line summary, requirements and duties with the posted date, score, strengths and gaps.`;
-  const messages: Anthropic.Beta.BetaMessageParam[] = [
-    {
-      role: "user",
-      content: `${candidate(p)}\n\nAlready saved (skip these): ${skipUrls.slice(0, 80).join(", ") || "none"}\n\nFind up to 8 strong matches.`,
-    },
-  ];
-  // A long search can pause; send the paused turn back and the server picks up where it stopped.
-  const done: Anthropic.Beta.BetaContentBlock[] = [];
-  let msg = await call({ max_tokens: 32000, system, messages, tools, output_config: { effort: "medium" } });
-  done.push(...msg.content);
-  for (let i = 0; i < 5 && msg.stop_reason === "pause_turn"; i++) {
-    const resume = [...messages, { role: "assistant" as const, content: done as Anthropic.Beta.BetaContentBlockParam[] }];
-    msg = await call({ max_tokens: 32000, system, messages: resume, tools, output_config: { effort: "medium" } });
-    done.push(...msg.content);
-  }
-  const findings = done
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
+  const findings = await research(
+    system,
+    `${candidate(p)}\n\nAlready saved (skip these): ${skipUrls.slice(0, 80).join(", ") || "none"}\n\nFind up to 8 strong matches.`,
+  );
   if (!findings.trim()) return [];
   const r = await askJson<{ jobs: FoundJob[] }>(
     "Copy the job list from this research report into JSON. Keep only jobs with a real URL. Do not add jobs or change scores.",
@@ -137,6 +178,35 @@ Finish with a list of the jobs you kept: title, company, location, salary, url, 
     "low",
   );
   return r.jobs;
+}
+
+export type LinkedJob = { found: boolean; closed: boolean; title: string; company: string; location: string; salary: string; description: string };
+const LINKED_JOB_SCHEMA: Schema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["found", "closed", "title", "company", "location", "salary", "description"],
+  properties: {
+    found: { type: "boolean", description: "true only if the posting's own text was read" },
+    closed: { type: "boolean", description: "true if the posting says it is closed, filled or no longer accepting applications" },
+    title: { type: "string" },
+    company: { type: "string" },
+    location: { type: "string" },
+    salary: { type: "string", description: "As listed, or 'Not listed'" },
+    description: { type: "string", description: "Requirements and duties, plus the posted date text if seen" },
+  },
+};
+
+// Reads a job posting from just its link. Sites like LinkedIn often block reading, so it
+// also searches the web for the same posting (by job id, then title and company).
+export async function readJobFromLink(url: string, hint: { title?: string; company?: string }): Promise<LinkedJob> {
+  const findings = await research(
+    `You read one job posting for a job seeker. Fetch the link first. If the page is blocked, empty or a sign-in wall, search the web for the same posting: try the job id from the link, then the title and company once you know them, and prefer the company's own careers page.
+Only report what a posting's own text says. Never guess a title, company or requirements. If you could not read the posting anywhere, say so plainly.
+Finish with: title, company, location, pay as listed, whether it says it's closed or no longer accepting applications, and the requirements and duties with the posted date.`,
+    `LINK: ${url}${hint.title ? `\nTITLE GIVEN BY THE USER: ${hint.title}` : ""}${hint.company ? `\nCOMPANY GIVEN BY THE USER: ${hint.company}` : ""}`,
+  );
+  if (!findings.trim()) return { found: false, closed: false, title: "", company: "", location: "", salary: "", description: "" };
+  return askJson<LinkedJob>("Copy what this report says about the job posting into JSON. Do not add anything it doesn't say.", findings, LINKED_JOB_SCHEMA, "low");
 }
 
 // Scores one job the user added themselves.
